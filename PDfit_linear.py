@@ -13,6 +13,7 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import corner
 
+np.random.seed(45)
 
 # read in data
 df = pd.read_excel(r'C:\Users\cvegvari\Documents\GSK_info\Microbiology\TK-C-Preliminary-Linelist.xlsx', sheet_name='All Isolates',
@@ -25,13 +26,13 @@ df.columns = ['Strain', 'Rep', 'Agent', 'Conc', 'hr0', 'hr2', 'hr4', 'hr8']
 
 # extract observation
 df_gep_42BU = df[(df['Strain']=='100042BU') & (df['Agent']=='Gepotidacin') & (df['Conc']==0.03)]
-logobs = df_gep_42BU[['hr0', 'hr2', 'hr4']]
+logobs = np.asarray(df_gep_42BU[['hr0', 'hr2', 'hr4', 'hr8']])
 obs = 10 ** logobs
-obs_array = np.array(obs)
+#obs_array = np.array(obs)
 
 
 # time over which growth occurs
-times = np.array([0, 2, 4])
+times = np.array([0, 2, 4, 8])
 # repetitions of each experiment (Agent/Strain combination)
 num_reps = 5
 
@@ -46,7 +47,6 @@ params = np.array([r, K])
 
 # define model
 def exp_growth(params, times):
-    #P0 = obs_array[:,0]
     K = params[1]
     r = params[0]
     return K * np.exp(r * times)
@@ -56,7 +56,8 @@ def exp_growth(params, times):
 def log_like(params, times, d):
     M = exp_growth(params, times)
     M = np.log10(M)
-    ll = sum(sum(np.log(stats.norm.pdf(d, M))))
+    #ll = sum(sum(np.log(stats.norm.pdf(d, M))))
+    ll = np.sum(np.log(stats.norm.pdf(d, M)))
     if not np.isfinite(ll):
         return -np.inf    
     return ll
@@ -65,6 +66,7 @@ def log_like(params, times, d):
 nll = lambda *args: - log_like(*args)
 initial = np.array(params)
 soln = minimize(nll, initial, args=(times, logobs))
+
 
 # define prior probability
 def log_prior(params):
@@ -84,7 +86,7 @@ def log_prob(params, times, d):
 # draw initial values using ML results
 nwalkers = 8
 ndim = len(params)
-params0 = soln.x + 1e-5 * np.random.randn(nwalkers, ndim)
+params0 = soln.x + 1e-2 * np.random.randn(nwalkers, ndim)
 
                    
 # define sampler
@@ -105,8 +107,8 @@ for i in range(ndim):
     ax.set_xlim(0, len(samples))
     ax.set_ylabel(labels[i])
 axes[-1].set_xlabel("step number")
-fig.savefig('C:\\Users\\cvegvari\\Documents\\Python Scripts\\PDfit\\chains_100042BU-gep-0.03.jpeg', dpi=300, bbox_inches='tight')
-plt.close(fig)
+#fig.savefig('C:\\Users\\cvegvari\\Documents\\Python Scripts\\PDfit\\chains_100042BU-gep-0.03.jpeg', dpi=300, bbox_inches='tight')
+#plt.close(fig)
 
 
 # check autocorrelation
@@ -118,8 +120,8 @@ flat_samples = sampler.get_chain(discard=100, thin=25, flat=True)
 print(flat_samples.shape)
 
 fig = corner.corner(flat_samples)
-fig.savefig('C:\\Users\\cvegvari\\Documents\\Python Scripts\\PDfit\\corner_100042BU-gep-0.03.jpeg', dpi=300, bbox_inches='tight')
-plt.close(fig)
+#fig.savefig('C:\\Users\\cvegvari\\Documents\\Python Scripts\\PDfit\\corner_100042BU-gep-0.03.jpeg', dpi=300, bbox_inches='tight')
+#plt.close(fig)
 
 # get median and 95 percentiles for results
 r_median = np.median(flat_samples[:,0])

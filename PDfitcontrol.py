@@ -25,13 +25,13 @@ df.columns = ['Strain', 'Rep', 'Agent', 'Conc', 'hr0', 'hr2', 'hr4', 'hr8', 'hr2
 
 # extract observation, note: same control used for all concentrations --> only fit one
 df_gep_42BU = df[(df['Strain']=='100042BU') & (df['Agent']=='Gepotidacin') & (df['Conc']==0.03)]
-logobs = df_gep_42BU[['hr0', 'hr2', 'hr4']]
+logobs = df_gep_42BU[['hr0', 'hr2', 'hr4', 'hr8']]
 obs = 10 ** logobs
 obs_array = np.array(obs)
 
 
 # time over which growth occurs
-times = np.array([0, 2, 4])
+times = np.array([0, 2, 4, 8])
 # repetitions of each experiment (Agent/Strain combination)
 num_reps = 5
 
@@ -60,7 +60,7 @@ def exp_growth(params, times):
 def log_like(params, times, d):
     M = np.asarray(exp_growth(params, times))
     M = np.log10(M)
-    ll = sum(sum(np.log(stats.norm.pdf(d, M))))
+    ll = np.sum(np.log(stats.norm.pdf(d, M)))
     if not np.isfinite(ll):
         return -np.inf    
     return ll

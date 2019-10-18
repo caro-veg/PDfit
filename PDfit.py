@@ -23,8 +23,9 @@ df.columns = ['Strain', 'Rep', 'Agent', 'Conc', 'hr0', 'hr2', 'hr4', 'hr8', 'hr2
 #df['Strain'].unique()
 #df['Agent'].unique()
 
+conc = 0.25
 # extract observation
-df_gep_42BU = df[(df['Strain']=='100042BU') & (df['Agent']=='Gepotidacin') & (df['Conc']==0.03)]
+df_gep_42BU = df[(df['Strain']=='100042BU') & (df['Agent']=='Gepotidacin') & (df['Conc']==conc)]
 logobs = df_gep_42BU[['hr0', 'hr2', 'hr4', 'hr8', 'hr24']]
 obs = 10 ** logobs
 obs_array = np.array(obs)
@@ -35,6 +36,19 @@ obs_array = np.array(obs)
 times = np.array([0, 2, 4, 8, 24])
 # repetitions of each experiment (Agent/Strain combination)
 num_reps = 5
+
+plt.plot(times, logobs.T, marker='o')
+plt.xlabel('time (hrs)')
+plt.ylabel('log10 Bacterial concentration (CFU/ml)')
+plt.ylim(0., 8.)
+plt.title('100042BU, gepotidacin, ' + str(conc)) 
+
+
+plt.plot(times, obs_array.T, marker='o')
+plt.xlabel('time (hrs)')
+plt.ylabel('Bacterial concentration (CFU/ml)')
+#plt.ylim(0., 700000)
+plt.title('100042BU, gepotidacin, ' + str(conc))
 
 
 # define priors
@@ -53,8 +67,8 @@ def logistic_growth(params, times):
 # define log likelihood
 def log_like(params, times, d):
     M = logistic_growth(params, times)
-    M = np.log(M)
-    ll = sum(sum(np.log(stats.norm.pdf(d, M))))
+    M = np.log10(M)
+    ll = np.sum(np.log(stats.norm.pdf(d, M)))
     if not np.isfinite(ll):
         return -np.inf    
     return ll
