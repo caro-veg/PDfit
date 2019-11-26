@@ -15,8 +15,8 @@ import corner
 
 np.random.seed(45)
 
-strain = "100042BU"
-agent = "Ciprofloxacin"
+strain = "100085BU"
+agent = "Gepotidacin"
 
 # read in data
 df = pd.read_excel(r'C:\Users\cvegvari\Documents\GSK_info\Microbiology\TK-C-Preliminary-Linelist.xlsx', sheet_name='All Isolates',
@@ -61,10 +61,8 @@ A = fitr.loc[fitr['Conx']=='0x', ['r_median']]
 A = A.iloc[0]['r_median']
 B = fitr.loc[fitr['Conx']=='10x', ['r_median']]
 B = B.iloc[0]['r_median']
-#A = 0.21
-#B = -1.19
 D = A - B
-gamma = 0.0068
+gamma = 0.4
 params = np.array([D, gamma, B])
 
 
@@ -85,7 +83,7 @@ def exp_growth(params, C, B0, times):
 def log_like(params, times, C, B0, d):
     B = exp_growth(params, C, B0, times)
     #ll = np.sum(np.log(stats.norm.pdf(x=d, loc=B)))
-    ll = - (d - B) * (d - B) / (2 * 1 * 1)
+    ll = - (d - B) * (d - B) / (2 * 5 * 5)
     ll = np.sum(ll)
     if not np.isfinite(ll):
         return -np.inf    
@@ -103,9 +101,10 @@ soln = minimize(nll, initial, args=(times, C, B0, lnobs))
 # define prior probability
 def log_prior(params):
     D, gamma, B = params
-    if (0. < D < 100.) and (0. < gamma < 1000.) and (-100. < B < 100.):
+    if (0. < D < 4.) and (0. < gamma < 4.) and (-4. < B < 2.):
         return 0
-    return -np.inf
+    else:
+        return -np.inf
 
 # define log probability using prior probability and log likelihood
 def log_prob(params, times, C, B0, d):
@@ -116,22 +115,22 @@ def log_prob(params, times, C, B0, d):
 
 
 # draw initial values using ML results
-nwalkers = 8
+nwalkers = 500
 ndim = len(params)
-params0 = soln.x + 1e-2 * np.random.randn(nwalkers, ndim)
+params0 = soln.x + np.array([1e-4, 1e-6, 1e-4]) * np.random.randn(nwalkers, ndim)
    
 # define sampler
 sampler = em.EnsembleSampler(nwalkers, ndim, log_prob, args=(times, C, B0, lnobs))
 
 # run MCMC
-state = sampler.run_mcmc(params0, 100000, progress=True)
+state = sampler.run_mcmc(params0, 10000, progress=True)
 
 # get MCMC chain for downstream analysis
 samples = sampler.get_chain()
 
 # plot chains for all fitted parameters
 fig, axes = plt.subplots(ndim, figsize=(10, 7), sharex=True)
-labels = ['a', 's', 'q']
+labels = ['D', 'gamma', 'B']
 for i in range(ndim):
     ax = axes[i]
     ax.plot(samples[:, :, i], 'k', alpha=0.3)
@@ -154,8 +153,9 @@ print(tau)
 flat_samples = sampler.get_chain(discard=100, thin=1000, flat=True)
 print(flat_samples.shape)
 
+flat_probs = sampler.get_log_prob(discard=100, thin=1000, flat=True)
 
-fig = corner.corner(flat_samples)
+fig = corner.corner(flat_samples, labels=[r"$D$", r"$gamma$", r"$B$"])
 fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\corner_' + strain + '_' + xagent + '.jpeg', dpi=300, bbox_inches='tight')
 plt.close(fig)
 
@@ -174,6 +174,11 @@ print('D median (95 percentile):', D_median, ' (', D_95pc[0], ', ', D_95pc[1], '
 print('gamma median (95 percentile):', gamma_median, ' (', gamma_95pc[0], ', ', gamma_95pc[1], ')', file=f)
 print('B median (95 percentile):', B_median, ' (', B_95pc[0], ', ', B_95pc[1], ')', file=f)
 f.close()   
+
+
+# save chain
+np.save('D:\\GCPKPD\\PD_r_conc_fits\\chain_100085BU_gep.npy', flat_samples, allow_pickle=False)
+
 
 ########################## PLOT FIT ###########################################
 
@@ -195,7 +200,91 @@ def plot_fitted_r(data, strain, agent, mlfit, C):
     #ax.set_ylim([-2.,1.])
     ax.set_title(strain + ' ' + agent, fontsize=18)
     ax.set_ylabel('Fitted growth rate', fontsize=18)
-    ax.set_xlabel('Concentration (CFU/ml)', fontsize=18)
+    ax.set_xlabel('Concentration', fontsize=18)
+    ax.tick_params(axis='both', which='major', labelsize=18)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+# Function to plot fitted growth rates (r) by strain and agent
+def plot_fitted_r_uncertainty(flat_samples, C, flat_probs):
+    fig, ax = plt.subplots()
+    for i in range(0, 1000):
+        i = np.random.randint(0, len(flat_samples))
+        d = flat_samples[i, 0]
+        g = flat_samples[i, 1]
+        b = flat_samples[i, 2]
+        ax.plot(C, d * np.exp(-g * C) + b, color='salmon', alpha=0.02, linewidth=2)
+    D, gamma, B = flat_samples[np.argmax(flat_probs)]    
+    ax.plot(C, D * np.exp(-gamma * C) + B, color='sienna', linewidth=3, zorder=5)    
+    ax.axhline(y=0, linestyle='--', color='darkslategrey', zorder=2)
+    ax.set_title(strain + ' ' + agent, fontsize=18)
+    ax.set_ylabel('Fitted growth rate', fontsize=18)
+    ax.set_xlabel('Concentration', fontsize=18)
+    ax.tick_params(axis='both', which='major', labelsize=18)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+
+def plot_data_fits(logobs, flat_samples, C, flat_probs, times, B0):
+    fig, ax = plt.subplots()
+    for i in range(0, 100):
+        i = np.random.randint(0, len(flat_samples))
+        d = flat_samples[i, 0]
+        g = flat_samples[i, 1]
+        b = flat_samples[i, 2]
+        params = np.array([d, g, b])
+        Bac = exp_growth(params, C, B0, times)
+        Bac = np.transpose(Bac)
+        Bac = Bac / np.log(10)
+        ax.plot(times, Bac, color='steelblue', linewidth=2, alpha=0.02)
+    D, gamma, B = flat_samples[np.argmax(flat_probs)] 
+    params = np.array([D, gamma, B])
+    Bac = exp_growth(params, C, B0, times)
+    Bac = np.transpose(Bac)
+    Bac = Bac / np.log(10)
+    ax.plot(times, Bac, color='navy', linewidth=1, linestyle=':')
+    ax.plot(times, np.transpose(logobs), 'ko', markersize=2)
+    ax.set_title(strain + ' ' + agent, fontsize=18)
+    ax.set_ylabel('Bacteria (CFU/ml)')
+    ax.set_xlabel('Time (h)')
+    ax.tick_params(axis='both', which='major', labelsize=18)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+def plot_data_fits_one_conc(logobs, i1, i2, i_lab, flat_samples, C, flat_probs, times, B0, conc_labels):
+    fig, ax = plt.subplots()
+    for i in range(0, 1000):
+        i = np.random.randint(0, len(flat_samples))
+        d = flat_samples[i, 0]
+        g = flat_samples[i, 1]
+        b = flat_samples[i, 2]
+        params = np.array([d, g, b])
+        r = r_conc(params, C[i1:i2])
+        Bac = np.log(np.transpose(np.array([B0[i1:i2],]))) + np.transpose(np.array([r,])) * times
+        Bac = np.transpose(Bac)
+        Bac = Bac / np.log(10)
+        ax.plot(times, Bac, color='steelblue', linewidth=2, alpha=0.02)
+    D, gamma, B = flat_samples[np.argmax(flat_probs)] 
+    params = np.array([D, gamma, B])
+    r = r_conc(params, C[i1:i2])
+    Bac = np.log(np.transpose(np.array([B0[i1:i2],]))) + np.transpose(np.array([r,])) * times
+    Bac = np.transpose(Bac)
+    Bac = Bac / np.log(10)
+    ax.plot(times, Bac, color='navy', linewidth=1, linestyle=':')
+    ax.plot(times, np.transpose(logobs[i1:i2]), 'ko', markersize=2)
+    ax.set_title(strain + ' ' + agent + ' ' + conc_labels[i_lab])
+    ax.set_ylim([0., 10.])
+    ax.set_ylabel('Bacteria (CFU/ml)')
+    ax.set_xlabel('Time (h)')
     ax.tick_params(axis='both', which='major', labelsize=18)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -203,14 +292,26 @@ def plot_fitted_r(data, strain, agent, mlfit, C):
     return fig
     
     
-fig = plot_fitted_r(fitted_r_data, strain, xagent, soln.x, C)
-fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\fitted_r_ML_' + strain + '_' + xagent + '.jpeg')
-plt.close(fig)
-
-fig = plot_fitted_r(fitted_r_data, strain, xagent, np.array([D_median, gamma_median, B_median]), C)
-fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\fitted_r_MCMC_' + strain + '_' + xagent + '.jpeg')
-plt.close(fig)
-
-#fig = plot_fitted_r(fitted_r_data, strain, agent, params, C)
-#fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\params_r_' + strain + '_' + agent + '.jpeg')
+#fig = plot_fitted_r(fitted_r_data, strain, xagent, soln.x, C)
+#fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\fitted_r_ML_' + strain + '_' + xagent + '.jpeg')
 #plt.close(fig)
+
+#fig = plot_fitted_r(fitted_r_data, strain, xagent, np.array([D_median, gamma_median, B_median]), C)
+#fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\fitted_r_MCMC_' + strain + '_' + xagent + '.jpeg')
+#plt.close(fig)
+
+fig = plot_fitted_r_uncertainty(flat_samples, C, flat_probs)
+fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\uncertainty_' + strain + '_' + agent + '.jpeg')
+plt.close(fig)
+
+fig = plot_data_fits(logobs, flat_samples, C, flat_probs, times, B0)
+fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\data_fits_' + strain + '_' + agent + '.jpeg')
+plt.close(fig)
+
+conc_labels = df_ag_strain['Conc'].astype(str).unique()
+for i in range(0, 7):
+    fig = plot_data_fits_one_conc(logobs, i*5, (i+1)*5, i, flat_samples, C, flat_probs, times, B0, conc_labels)
+    fig.savefig('D:\\GCPKPD\\PD_r_conc_fits\\data_fits_' + strain + '_' + agent + ' ' + conc_labels[i] + '.jpeg')
+    plt.close(fig)
+    
+
